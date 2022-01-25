@@ -20,35 +20,67 @@ class CPPMutation(Mutation):
 
 
 class CPPCrossover(Crossover):
-    def __init__(self):
-        super().__init__(2, 2)
+
+    N_OFFSPRINGS = 1
+
+    def __init__(self, n_controllers, n_switches, weight):
+        super().__init__(2, self.N_OFFSPRINGS)
+        self.n_controllers = n_controllers
+        self.n_switches = n_switches
+        self.weight = weight
 
     def _do(self, problem, x, **kwargs):
-        return x
+        _, n_matings, n_var = x.shape
+
+        # Output (n_offsprings, n_matings, n_var)
+        y = np.empty((self.N_OFFSPRINGS, n_matings, n_var), dtype=object)
+
+        for k in range(n_matings):
+            # Parents
+            a, b = x[0, k], x[1, k]
+
+            r = np.random.Generator(np.random.PCG64()).normal()
+            offspring = a + (b - a) * r * self.weight
+
+            y[0, k] = self.ensure_bounds(offspring, problem.n_controllers, problem.n_switches)
+
+        return y
+
+    @staticmethod
+    def ensure_bounds(offspring, n_controllers, n_switches):
+        offspring[offspring < 0] = 0
+
+        controllers = offspring[:n_controllers]
+        switches = offspring[n_controllers:]
+
+        controllers[controllers >= n_switches] = n_switches - 1
+        switches[switches >= n_controllers] = n_controllers - 1
+
+        return np.concatenate([controllers, switches])
 
 
 class CPPSampling(Sampling):
-    def __init__(self, n_switches, n_controllers):
+    def __init__(self, n_controllers, n_switches):
         super().__init__()
-        self.n_switches = n_switches
         self.n_controllers = n_controllers
+        self.n_switches = n_switches
 
     def _do(self, problem, n_samples, **kwargs):
-        logging.info("n_samples: " + str(n_samples))
         x = np.full((n_samples, self.n_switches + self.n_controllers), fill_value=0)
 
         for i in range(n_samples):
             controllers_positions = numpy.random.randint(0, self.n_switches, size=self.n_controllers)
             switches_assignments = numpy.random.randint(0, self.n_controllers, size=self.n_switches)
 
-            x[i] = numpy.concatenate([controllers_positions,switches_assignments])
+            x[i] = numpy.concatenate([controllers_positions, switches_assignments])
 
+        print("Sampling size: " + str(len(x)))
         return x
 
 
 class CPPProblem(Problem):
 
-    def __init__(self, n_switches, n_controllers, prop_delay_matrix):
+    def __init__(self, n_controllers, n_switches, prop_delay_matrix):
         super().__init__(
             n_var=n_switches + n_controllers,
             n_obj=3,
@@ -57,15 +89,13 @@ class CPPProblem(Problem):
             xu=1.0
         )
         self.prop_delay_matrix = prop_delay_matrix
-        self.n_switches = n_switches
         self.n_controllers = n_controllers
+        self.n_switches = n_switches
 
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
 
     def _evaluate(self, x, out, *args, **kwargs):
-        logging.info("x: " + str(len(x)))
-
         results = []
 
         for individual in x:
@@ -108,37 +138,51 @@ class CPPProblem(Problem):
 
 
 class CPP:
-    def __init__(self, n_switches, n_controllers, network_delay_matrix):
-        self.n_switches = n_switches
+    def __init__(self, n_controllers, n_switches,  crossover_weight, network_delay_matrix):
         self.n_controllers = n_controllers
+        self.n_switches = n_switches
+        self.crossover_weight = crossover_weight
         self.network_delay_matrix = network_delay_matrix
+        self.problem = None
+        self.res = None
 
     def execute(self):
-        problem = CPPProblem(self.n_switches, self.n_controllers, self.network_delay_matrix)
-        sampling = CPPSampling(self.n_switches, self.n_controllers)
-        crossover = CPPCrossover()
+        self.problem = CPPProblem(self.n_controllers, self.n_switches,  self.network_delay_matrix)
+
+        sampling = CPPSampling(self.n_controllers, self.n_switches)
+        crossover = CPPCrossover(self.n_controllers, self.n_switches, self.crossover_weight)
         mutation = CPPMutation()
 
         algorithm = NSGA2(
-            pop_size=100,
+            pop_size=600,
             sampling=sampling,
             crossover=crossover,
             mutation=mutation
         )
 
-        res = minimize(
-            problem,
+        self.res = minimize(
+            self.problem,
             algorithm,
             ('n_gen', 200),
             seed=1,
-            verbose=True
+            save_history=True
         )
+
+
+def test_crossover():
+    crossover = CPPCrossover(3, 5, 0.8)
+    controllers = [-1,5,3]
+    switches = [0,2,0,3,1]
+
+    r = crossover.ensure_bounds(np.array(controllers + switches), crossover.n_controllers, crossover.n_switches)
+
+    print(r)
 
 
 def test_cpp():
     graph = nx.random_internet_as_graph(60)
     network_delay_matrix = dict(all_pairs_shortest_path_length(graph))
-    cpp = CPP(60, 10, network_delay_matrix)
+    cpp = CPP(60, 10, 0.8, network_delay_matrix)
     cpp.execute()
 
 
