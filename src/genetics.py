@@ -39,7 +39,7 @@ class CPPCrossover(Crossover):
             # Parents
             a, b = x[0, k], x[1, k]
 
-            r = np.random.Generator(np.random.PCG64()).normal()
+            r = np.random.random_sample()
             offspring = a + (b - a) * r * self.weight
 
             y[0, k] = self.ensure_bounds(offspring, problem.n_controllers, problem.n_switches)
@@ -83,7 +83,7 @@ class CPPProblem(Problem):
     def __init__(self, n_controllers, n_switches, prop_delay_matrix):
         super().__init__(
             n_var=n_switches + n_controllers,
-            n_obj=3,
+            n_obj=2,
             n_constr=0,
             xl=0.0,
             xu=1.0
@@ -100,7 +100,7 @@ class CPPProblem(Problem):
 
         for individual in x:
             results.append(
-                np.array([self.f1(individual), self.f2(individual), self.f3(individual)])
+                np.array([self.f1(individual), self.f2(individual)])
             )
 
         out["F"] = np.array(results)
@@ -116,7 +116,7 @@ class CPPProblem(Problem):
                 if switch_assignment == controller:
                     total_delay += self.prop_delay_matrix[controller_position][switch]
 
-        return total_delay / len(switches)
+        return total_delay / len(controllers)
 
     # Average Controller to Controller Delay
     def f2(self, individual):
@@ -124,11 +124,11 @@ class CPPProblem(Problem):
 
         total_delay = 0
         for controller, controller_position in enumerate(controllers):
-            for controller2, controller_position2 in enumerate(controllers):
+            for controller2, controller_position2 in enumerate(controllers[controller:]):
                 if controller != controller2:
                     total_delay += self.prop_delay_matrix[controller_position][controller_position2]
 
-        return total_delay / (len(controllers) * len(controllers))
+        return 2 * total_delay / (len(controllers) * (len(controllers) - 1))
 
     # Maximal controller load imbalance
     def f3(self, individual):
@@ -138,9 +138,11 @@ class CPPProblem(Problem):
 
 
 class CPP:
-    def __init__(self, n_controllers, n_switches,  crossover_weight, network_delay_matrix):
+    def __init__(self, n_controllers, n_switches, pop_size, n_gen, crossover_weight, network_delay_matrix):
         self.n_controllers = n_controllers
         self.n_switches = n_switches
+        self.pop_size = pop_size
+        self.n_gen = n_gen
         self.crossover_weight = crossover_weight
         self.network_delay_matrix = network_delay_matrix
         self.problem = None
@@ -154,7 +156,7 @@ class CPP:
         mutation = CPPMutation()
 
         algorithm = NSGA2(
-            pop_size=600,
+            pop_size=self.pop_size,
             sampling=sampling,
             crossover=crossover,
             mutation=mutation
@@ -163,26 +165,21 @@ class CPP:
         self.res = minimize(
             self.problem,
             algorithm,
-            ('n_gen', 200),
+            ('n_gen', self.n_gen),
             seed=1,
             save_history=True
         )
 
-
-def test_crossover():
-    crossover = CPPCrossover(3, 5, 0.8)
-    controllers = [-1,5,3]
-    switches = [0,2,0,3,1]
-
-    r = crossover.ensure_bounds(np.array(controllers + switches), crossover.n_controllers, crossover.n_switches)
-
-    print(r)
-
-
 def test_cpp():
+    N_CONTROLLERS = 10
+    N_SWITCHES = 50
+    POP_SIZE = 200
+    N_GEN = 200
+    CROSSOVER_WEIGHT = 0.8
+
     graph = nx.random_internet_as_graph(60)
     network_delay_matrix = dict(all_pairs_shortest_path_length(graph))
-    cpp = CPP(60, 10, 0.8, network_delay_matrix)
+    cpp = CPP(N_CONTROLLERS, N_SWITCHES, POP_SIZE, N_GEN, CROSSOVER_WEIGHT, network_delay_matrix)
     cpp.execute()
 
 
