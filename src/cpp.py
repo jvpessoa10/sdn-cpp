@@ -1,41 +1,47 @@
 import time
+
 from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.factory import get_mutation, get_sampling, get_crossover
 from pymoo.optimize import minimize
 
+from src.data.config import Config
 from src.genetics.crossover import CPPCrossover
+from src.genetics.mutation import PsoMutation
 from src.genetics.problem import CPPProblem
 from src.genetics.sampling import CPPSampling
 
 
 class PsoMogaCpp:
-    def __init__(self, n_controllers, n_switches, pop_size, n_gen, crossover_weight, network_delay_matrix):
-        self.n_controllers = n_controllers
-        self.n_switches = n_switches
-        self.pop_size = pop_size
-        self.n_gen = n_gen
-        self.crossover_weight = crossover_weight
-        self.network_delay_matrix = network_delay_matrix
-        self.problem = None
+    def __init__(self, config: Config):
+        self.config = config
+        self.problem = CPPProblem(
+            self.config.n_controllers,
+            self.config.network.n_switches(),
+            self.config.network.delay_matrix()
+        )
         self.res = None
 
     def execute(self):
-        self.problem = CPPProblem(self.n_controllers, self.n_switches, self.network_delay_matrix)
-        crossover = CPPCrossover(self.n_controllers, self.n_switches, self.crossover_weight)
-        sampling = CPPSampling(self.n_controllers, self.n_switches)
-        mutation = get_mutation("int_pm")
+        if self.config.use_generic_operators:
+            sampling = get_sampling("int_random")
+            crossover = get_crossover("int_sbx")
+            mutation = get_mutation("int_pm")
+        else:
+            sampling = CPPSampling(self.config.n_controllers, self.config.network.n_switches())
+            crossover = CPPCrossover(self.config.n_controllers, self.config.network.n_switches())
+            mutation = PsoMutation()
 
         algorithm = NSGA2(
-            pop_size=self.pop_size,
-            sampling=get_sampling("int_random"),
-            crossover=get_crossover("int_sbx"),
-            mutation=get_mutation("int_pm")
+            pop_size=self.config.pop_size,
+            sampling=sampling,
+            crossover=crossover,
+            mutation=mutation
         )
 
         self.res = minimize(
             self.problem,
             algorithm,
-            ('n_gen', self.n_gen),
+            ('n_gen', self.config.n_generations),
             seed=1,
             save_history=True,
             verbose=True

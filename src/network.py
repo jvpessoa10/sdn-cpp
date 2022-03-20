@@ -1,17 +1,40 @@
 import random
+from dataclasses import dataclass
 from os import listdir
-
 import networkx as nx
-from networkx import Graph, DiGraph
+from networkx import Graph, is_weighted, all_pairs_dijkstra_path_length, convert_node_labels_to_integers
+
+
+@dataclass
+class Network:
+    graph: Graph
+    topology: str
+
+    def delay_matrix(self):
+        return dict(
+            all_pairs_dijkstra_path_length(
+                self.graph,
+                weight="weight"
+            )
+        )
+
+    def is_network_weighted(self):
+        return is_weighted(self.graph)
+
+    def n_switches(self):
+        return len(self.graph.nodes)
 
 
 def random_as(n_nodes):
     graph = nx.random_internet_as_graph(n_nodes)
 
     for (u, v) in graph.edges():
-        graph.edges[u, v]['weight'] = random.randint(2000, 10000) / 100.0
+        graph.edges[u, v]['weight'] = random.randint(10, 100)
 
-    return graph
+    return Network(
+        graph=graph,
+        topology="random_as"
+    )
 
 
 def rnp(latency_files=None):
@@ -66,7 +89,10 @@ def rnp(latency_files=None):
     if latency_files:
         graph = _load_rnp_weight(latency_files, graph)
 
-    return graph
+    return Network(
+        graph=convert_node_labels_to_integers(graph),
+        topology="rnp"
+    )
 
 
 def _load_rnp_weight(path, graph):
@@ -80,6 +106,7 @@ def _load_rnp_weight(path, graph):
 
                 try:
                     graph[node_name][edge_node]['weight'] = round(float(weight), 2)
-                finally:
+                except:
                     continue
+
     return graph

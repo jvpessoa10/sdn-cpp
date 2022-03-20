@@ -29,24 +29,28 @@ class CPPProblem(ElementwiseProblem):
         switches = individual[self.n_controllers:]
 
         total_delay = 0
+        number_connections = 0
         for controller, controller_position in enumerate(controllers):
             for switch, switch_assignment in enumerate(switches):
                 if switch_assignment == controller:
                     total_delay += self.prop_delay_matrix[controller_position][switch]
+                    number_connections += 1
 
-        return total_delay / len(controllers)
+        return total_delay / number_connections
 
     # Average Controller to Controller Delay
     def f2(self, individual):
         controllers = individual[:self.n_controllers]
 
         total_delay = 0
+        number_connections = 0
         for controller, controller_position in enumerate(controllers):
             for controller2, controller_position2 in enumerate(controllers[controller:]):
                 if controller != controller2:
                     total_delay += self.prop_delay_matrix[controller_position][controller_position2]
+                    number_connections += 1
 
-        return 2 * total_delay / (len(controllers) * (len(controllers) - 1))
+        return total_delay / number_connections
 
     # Maximal controller load imbalance
     def f3(self, individual):

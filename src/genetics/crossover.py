@@ -6,11 +6,11 @@ class CPPCrossover(Crossover):
 
     N_OFFSPRINGS = 1
 
-    def __init__(self, n_controllers, n_switches, weight):
+    def __init__(self, n_controllers, n_switches):
         super().__init__(2, self.N_OFFSPRINGS)
         self.n_controllers = n_controllers
         self.n_switches = n_switches
-        self.weight = weight
+        self.weight = 0.8
 
     def _do(self, problem, x, **kwargs):
         _, n_matings, n_var = x.shape

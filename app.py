@@ -1,97 +1,114 @@
 import os
-
-import networkx as nx
 import numpy as np
-from matplotlib import pyplot as plt
 from networkx import all_pairs_dijkstra_path_length, convert_node_labels_to_integers
-from pandas import DataFrame
-from pymoo.visualization.scatter import Scatter
 
+from src.data.config import Config
 from src.cpp import PsoMogaCpp
-import pandas as pd
-import plotly.express as px
-from src.network import rnp, random_as
+from src.network import rnp
+from src.persistence import _save_scatter, _save_line_graph
 
-N_CONTROLLERS = 3
+N_CONTROLLERS = 7
 N_SWITCHES = 27
 POP_SIZE = 200
 N_GEN = 200
 CROSSOVER_WEIGHT = 0.8
 
 
-def print_population_evolution(iterations, x_label, y_label):
-    data = pd.DataFrame()
-    for i, ite in enumerate(iterations):
-        population = pd.DataFrame(data=ite.pop.get("F"), columns=[x_label, y_label])
-        population["Generation"] = i
-
-        data = data.append(population)
-
-    fig = px.scatter(data, x=x_label, y=y_label, animation_frame="Generation")
-    fig.show()
-
-
-def save_dataframe(data, path):
-    data.to_csv(path)
-
-
-def save_scatter(data, path, x_label, y_label):
-    data = pd.DataFrame(data=data, columns=[x_label, y_label])
-    fig = px.scatter(data, x=x_label, y=y_label)
-    fig.write_image(path)
-
-
-def save_graph(graph, path):
-    nx.draw(graph, with_labels=True)
-    plt.savefig(path)
-
 def main():
-    root_path = os.path.dirname(__file__)
+    _execute(Config(
+        n_controllers=15,
+        pop_size=200,
+        n_generations=200,
+        network=rnp(),
+        use_generic_operators=True
+    ))
 
-    network = rnp(
-        latency_files=os.path.join(
-            root_path,
-            'topologies\\rnp\\20190830\\'
-        )
-    )
+    _execute(Config(
+        n_controllers=10,
+        pop_size=200,
+        n_generations=200,
+        network=rnp(),
+        use_generic_operators=True
+    ))
 
-    # network = random_as(N_SWITCHES)
+    _execute(Config(
+        n_controllers=5,
+        pop_size=200,
+        n_generations=200,
+        network=rnp(),
+        use_generic_operators=True
+    ))
 
-    network_enumerated = convert_node_labels_to_integers(network)
 
-    network_delay_matrix = dict(
-        all_pairs_dijkstra_path_length(
-            network_enumerated,
-            weight="weight"
-        )
-    )
 
-    cpp = PsoMogaCpp(N_CONTROLLERS, N_SWITCHES, POP_SIZE, N_GEN, CROSSOVER_WEIGHT, network_delay_matrix)
+def _execute(config: Config):
+    cpp = PsoMogaCpp(config)
     cpp.execute()
 
-    output_dir = os.path.join(root_path, "output")
+    _save_result(cpp.res, config)
+
+
+def _save_result(result, config: Config):
+    absolute_path = os.path.dirname(os.path.abspath(__file__))
+    default_out_path = os.path.join(absolute_path, "output")
+    output_dir = os.path.join(default_out_path, config.name())
     os.makedirs(output_dir, exist_ok=True)
 
-    pop = cpp.res.pop
+    pop = result.pop
+    _save_population_result(pop, os.path.join(output_dir, "results.png"))
+    _save_optimum_per_iteration(result.history, os.path.join(output_dir, "optimum_per_iteration.png"))
+    _save_results_avg_per_iteration(result.history, os.path.join(output_dir, "avg_per_iteration.png"))
+    _save_config(config, os.path.join(output_dir, "config.txt"))
 
-    save_scatter(
-        pop.get("F"),
-        os.path.join(output_dir, "results_scatter.png"),
+
+def _save_population_result(population, output_dir):
+    _save_scatter(
+        population.get("F"),
+        output_dir,
         x_label="SC_Avg_Delay",
-        y_label="CC_Avg_Delay"
+        y_label="CC_Avg_Delay",
+        title="Final population performance"
     )
-    save_dataframe(DataFrame(pop.get("X")), os.path.join(output_dir, "population.csv"))
-    save_dataframe(DataFrame(pop.get("F")), os.path.join(output_dir, "results.csv"))
-    save_graph(network_enumerated, os.path.join(output_dir, "network.png"))
 
-    n_evals = np.array([e.evaluator.n_eval for e in cpp.res.history])
-    opt = np.array([e.opt[0].F for e in cpp.res.history])
 
-    plt.title("Convergence")
-    plt.plot(n_evals, opt, "--")
-    plt.show()
+def _save_optimum_per_iteration(history, output_dir):
+    n_evals = np.array([e.evaluator.n_eval for e in history])
+    opt = np.array([e.opt.size for e in history])
 
-    # print_population_evolution(cpp.res.history, x_label="CC_Avg_Delay", y_label="C_Load_Imbalance")
+    _save_line_graph(
+        n_evals,
+        opt,
+        path=output_dir,
+        x_label="Iterations",
+        y_label="Individuals",
+        title="Nº Optimum Individuals / Iteration"
+    )
+
+
+def _save_results_avg_per_iteration(history, output_dir):
+    opt_avg = np.array([np.average(e.opt.get("F"), axis=0) for e in history])
+    n_evals = np.array([e.evaluator.n_eval for e in history])
+
+    _save_line_graph(
+        n_evals,
+        opt_avg[:, 0],
+        path=output_dir,
+        x_label="Iterations",
+        y_label="Avg SC Delay"
+    )
+
+
+def _save_config(config: Config, output_dir):
+    with open(output_dir, 'w') as writer:
+        writer.write(
+            "Number controllers: " + str(config.n_controllers) + "\n" +
+            "Number switches: " + str(config.network.n_switches()) + "\n" +
+            "Pop. Size: " + str(config.pop_size) + "\n" +
+            "N Generations: " + str(config.n_generations) + "\n" +
+            "Has generic operators: " + str(config.use_generic_operators) + "\n" +
+            "Topology: " + config.network.topology + "\n" +
+            "Is Weighted: " + str(config.network.is_network_weighted()) + "\n"
+        )
 
 
 if __name__ == "__main__":
