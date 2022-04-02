@@ -8,7 +8,7 @@ class CPPProblem(ElementwiseProblem):
     def __init__(self, n_controllers, n_switches, prop_delay_matrix):
         super().__init__(
             n_var=n_switches + n_controllers,
-            n_obj=2,
+            n_obj=3,
             n_constr=1,
             xl=0.0,
             xu=[n_switches - 1] * n_controllers + [n_controllers - 1] * n_switches,
@@ -20,7 +20,7 @@ class CPPProblem(ElementwiseProblem):
         self.n_switches = n_switches
 
     def _evaluate(self, x, out, *args, **kwargs):
-        out["F"] = np.array([self.f1(x), self.f2(x)])
+        out["F"] = np.array([self.f1(x), self.f2(x), self.f3(x)])
         out["G"] = 0 if self.c1(x) else 1
 
     # Average Switch to Controller Delay

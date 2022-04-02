@@ -4,7 +4,7 @@ from pymoo.algorithms.moo.nsga2 import NSGA2
 from pymoo.factory import get_mutation, get_sampling, get_crossover
 from pymoo.optimize import minimize
 
-from src.data.config import Config
+from src.config import Config
 from src.genetics.crossover import CPPCrossover
 from src.genetics.mutation import PsoMutation
 from src.genetics.problem import CPPProblem
